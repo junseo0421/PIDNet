@@ -79,7 +79,7 @@ def train(args):
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank,
                                        drop_last=True, shuffle=True)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler,
-                              num_workers=4, pin_memory=True, worker_init_fn=_seed_worker, collate_fn=collate_with_meta)
+                              num_workers=0, pin_memory=True, worker_init_fn=_seed_worker, collate_fn=collate_with_meta)
 
     val_dataset = SegmentationDataset(args.dataset_dir, args.crop_size, 'val', args.scale_range,
                                       val_resize_size=(1080, 1920))
@@ -87,7 +87,7 @@ def train(args):
     val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=local_rank,
                                      drop_last=False, shuffle=False)
     val_loader = DataLoader(val_dataset, batch_size=max(1, args.batch_size//2), sampler=val_sampler,
-                            num_workers=4, pin_memory=True, worker_init_fn=_seed_worker, collate_fn=collate_with_meta)
+                            num_workers=0, pin_memory=True, worker_init_fn=_seed_worker, collate_fn=collate_with_meta)
     
     # loss
     criterion = CrossEntropy(ignore_label=255)
