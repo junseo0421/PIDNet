@@ -363,12 +363,15 @@ class SegmentationDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        img = Image.open(self.image_paths[idx]).convert("RGB")
-        lab = Image.open(self.label_paths[idx]).convert("L")
-        tag = self.tags[idx]
-        img_t, lab_t, meta, edge_t = self.transform(img, lab, tag=tag)  # [UPDATED]
-        return img_t, lab_t, meta, edge_t  # [UPDATED]
-
+        try:
+            img = Image.open(self.image_paths[idx]).convert("RGB")
+            lab = Image.open(self.label_paths[idx]).convert("L")
+            tag = self.tags[idx]
+            img_t, lab_t, meta, edge_t = self.transform(img, lab, tag=tag)
+            return img_t, lab_t, meta, edge_t
+        except Exception as e:
+            print(f"[DATA ERROR] idx={idx}\n img={self.image_paths[idx]}\n lab={self.label_paths[idx]}\n -> {e}")
+            raise
 
 # class CrossEntropy(nn.Module):
 #     def __init__(self, ignore_label= 255, weight= None, aux_weights = [1, 0.4]):
