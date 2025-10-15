@@ -255,7 +255,7 @@ def train(args):
 
     if args.resume is not None and os.path.isfile(args.resume):
         map_location = {f'cuda:{0}': f'cuda:{local_rank}'}
-        ckpt = torch.load(args.resume, map_location=map_location)
+        ckpt = torch.load(args.resume, map_location=map_location, weights_only=False)
         if _is_full_checkpoint(ckpt):
             _load_model_state(model, ckpt["model"])
             if "optimizer" in ckpt:
@@ -279,7 +279,7 @@ def train(args):
             # 1) 같은 폴더의 last.pth.tar에서 opt/sched/epoch 복구 시도
             last_path = os.path.join(args.result_dir, "last.pth.tar")
             if os.path.isfile(last_path):
-                last_obj = torch.load(last_path, map_location=map_location)
+                last_obj = torch.load(last_path, map_location=map_location, weights_only=False)
                 if isinstance(last_obj, dict):
                     if "optimizer" in last_obj:
                         optimizer.load_state_dict(last_obj["optimizer"])
