@@ -583,10 +583,9 @@ if __name__ == "__main__":
     parser.add_argument("--teacher_loadpath", type=str, help="Path to dataset root",
                         default="/content/drive/MyDrive/PIDNet_L.pth")
     parser.add_argument("--resume", type=str,
-                        default=None,
-                        # "/content/drive/MyDrive/Colab Notebooks/2dss/pths/PIDNet/model_best.pth",
+                        default="/content/drive/MyDrive/PIDNet_kd/pths/last.pth.tar",
                         help="통합 ckpt(.pth/.tar) 또는 가중치(.pth) 경로")
-    parser.add_argument("--resume_epoch", type=int, default=None,
+    parser.add_argument("--resume_epoch", type=int, default=65,
                         help="weights-only 재개 시 마지막 완료 epoch(1-index)")
     parser.add_argument("--epochs", type=int, default=500)
     parser.add_argument("--result_dir", type=str, default='/content/drive/MyDrive/PIDNet_kd/pths')
