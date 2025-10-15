@@ -17,6 +17,9 @@ from collections import OrderedDict
 from kd_losses.DCSFKDLoss import DCSFKDLoss
 from kd_losses.OutputKDLoss import OutputKDLoss
 
+import cv2
+cv2.setNumThreads(0)  # OpenCV 스레드 충돌 방지
+
 
 def _update_confmat(confmat, preds, targets, num_classes, ignore_index=255):
     valid = (targets != ignore_index)
@@ -54,6 +57,25 @@ def _seed_worker(worker_id):
     seed = torch.initial_seed() % (2**32)
     random.seed(seed)
     np.random.seed(seed)
+
+
+def _take_one_batch_for_warmup(dataset, device, batch_size, collate_fn):
+    # sampler/워커/핀메모리 모두 안전하게 OFF
+    tmp_loader = DataLoader(
+        dataset,
+        batch_size=min(batch_size, 2),   # 1~2 정도면 충분 (shape만 필요)
+        shuffle=False,
+        num_workers=0,
+        pin_memory=False,
+        collate_fn=collate_fn
+    )
+    batch = next(iter(tmp_loader))
+    # 즉시 해제해서 워커 정리 이슈 없음
+    del tmp_loader
+    imgs, labels, metas, edges = batch
+    return (imgs.to(device, non_blocking=False),
+            labels.to(device, non_blocking=False),
+            edges.to(device, non_blocking=False))
 
 
 def train(args):
@@ -319,7 +341,19 @@ def train(args):
             # 주의: next(iter(loader))는 이후 for-루프와 별개로 '새로운' 이터레이터이므로
             # 여기서 한 번 꺼내도 본 학습 루프 시작에는 영향 없음.
             try:
-                imgs, labels, metas, edges = next(iter(train_loader))
+                imgs, labels, edges = _take_one_batch_for_warmup(
+                    train_dataset, device, args.batch_size, collate_with_meta
+                )
+
+                # student/teacher 한 번 forward만
+                _loss_dummy, out_s, feat_s = model(imgs, labels, edges)
+                out_t, feat_t = teacher_model(imgs, labels, edges)
+
+                fs = feat_s[1] if isinstance(feat_s, (list, tuple)) else feat_s
+                ft = feat_t[1] if isinstance(feat_t, (list, tuple)) else feat_t
+                criterion_kd.warmup_from_feats(fs, ft)
+                dist.barrier()
+
             except StopIteration:
                 # 드물게 빈 로더면 val_loader에서라도 한 배치
                 imgs, labels, metas, edges = next(iter(val_loader))
