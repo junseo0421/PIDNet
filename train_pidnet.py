@@ -336,48 +336,36 @@ def train(args):
         if local_rank == 0:
             print("[KD Warmup] Taking one batch to initialize alignment layers...")
 
-        # 첫 배치 하나만 가져와서 feature 산출 (train_sampler의 epoch 고정 영향 없음)
         with torch.no_grad():
-            # 주의: next(iter(loader))는 이후 for-루프와 별개로 '새로운' 이터레이터이므로
-            # 여기서 한 번 꺼내도 본 학습 루프 시작에는 영향 없음.
             try:
+                # train_dataset에서 worker=0 임시 로더로 한 배치만
                 imgs, labels, edges = _take_one_batch_for_warmup(
                     train_dataset, device, args.batch_size, collate_with_meta
                 )
-
-                # student/teacher 한 번 forward만
-                _loss_dummy, out_s, feat_s = model(imgs, labels, edges)
-                out_t, feat_t = teacher_model(imgs, labels, edges)
-
-                fs = feat_s[1] if isinstance(feat_s, (list, tuple)) else feat_s
-                ft = feat_t[1] if isinstance(feat_t, (list, tuple)) else feat_t
-                criterion_kd.warmup_from_feats(fs, ft)
-                dist.barrier()
-
             except StopIteration:
-                # 드물게 빈 로더면 val_loader에서라도 한 배치
-                imgs, labels, metas, edges = next(iter(val_loader))
-
-            imgs = imgs.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
-            bd_gts = edges.to(device, non_blocking=True)
+                # 아주 드물게 train이 비면 val로 동일 처리
+                imgs, labels, metas, edges = next(iter(DataLoader(
+                    val_dataset, batch_size=min(args.batch_size, 2),
+                    shuffle=False, num_workers=0, pin_memory=False,
+                    collate_fn=collate_with_meta
+                )))
+                imgs = imgs.to(device, non_blocking=False)
+                labels = labels.to(device, non_blocking=False)
+                edges = edges.to(device, non_blocking=False)
 
             # student/teacher 한 번 forward만 (loss/opt 갱신 없음)
-            # FullModel 시그니처: student → (loss, outputs, features), teacher → (outputs, features)
-            _loss_dummy, out_s, feat_s = model(imgs, labels, bd_gts)
-            out_t, feat_t = teacher_model(imgs, labels, bd_gts)
+            _loss_dummy, out_s, feat_s = model(imgs, labels, edges)
+            out_t,      feat_t         = teacher_model(imgs, labels, edges)
 
-            # PIDNet에서는 메인 세그 feature가 [1] 인덱스
             fs = feat_s[1] if isinstance(feat_s, (list, tuple)) else feat_s
             ft = feat_t[1] if isinstance(feat_t, (list, tuple)) else feat_t
 
-            # warmup으로 align 레이어 생성
             criterion_kd.warmup_from_feats(fs, ft)
 
-        # 모든 rank에서 align 생성 완료 동기화
+        # 모든 rank에서 동기화 (한 번만)
         dist.barrier()
 
-        # 이제야 KD state 복원 (strict=False로 누락 키 허용)
+        # 이제야 KD state 복원
         try:
             criterion_kd.load_state_dict(kd_state_pending, strict=False)
             if local_rank == 0:
@@ -386,7 +374,6 @@ def train(args):
             if local_rank == 0:
                 print(f"[KD Warmup] criterion_kd load skipped: {e}")
 
-        # (옵션) Output KD에 학습 파라미터가 있고 state가 보관되어 있으면 로드
         if kd_out_state_pending is not None:
             try:
                 criterion_output_kd.load_state_dict(kd_out_state_pending, strict=False)
@@ -396,7 +383,6 @@ def train(args):
                 if local_rank == 0:
                     print(f"[KD Warmup] criterion_output_kd load skipped: {e}")
 
-        # 더 이상 보관 불필요
         kd_state_pending = None
         kd_out_state_pending = None
 
